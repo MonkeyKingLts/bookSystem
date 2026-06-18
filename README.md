@@ -32,6 +32,16 @@ cd .. && npm run dev
 - 前端: http://localhost:5173
 - 后端 API: http://localhost:3001/api
 
+## 项目文档
+
+生成 PDF 开发文档（含需求分析、系统设计、系统实现、系统测试、总结）：
+
+```bash
+npm run docs:pdf
+```
+
+输出文件：`docs/Lexis-图书管理系统-开发文档.pdf`
+
 ## 默认管理员账号
 
 - 邮箱: `admin@lexiconlib.org`
