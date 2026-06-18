@@ -59,9 +59,18 @@ router.post("/", (req, res) => {
   const count = db.prepare("SELECT COUNT(*) as c FROM readers").get() as { c: number };
   const readerId = `LIB-${String(8000 + count.c + 1)}-${String.fromCharCode(65 + (count.c % 26))}`;
 
+  const limitMap: Record<string, string> = {
+    "本科生": "max_books_undergrad",
+    "研究生": "max_books_grad",
+    "教职工": "max_books_faculty",
+  };
+  const limitKey = limitMap[reader_type || "本科生"] || "max_books_undergrad";
+  const limitRow = db.prepare("SELECT value FROM settings WHERE key = ?").get(limitKey) as { value: string } | undefined;
+  const borrowLimit = parseInt(limitRow?.value || "10", 10);
+
   const result = db.prepare(`
-    INSERT INTO readers (reader_id, name, email, phone, student_id, reader_type, expiry_date)
-    VALUES (@reader_id, @name, @email, @phone, @student_id, @reader_type, @expiry_date)
+    INSERT INTO readers (reader_id, name, email, phone, student_id, reader_type, expiry_date, borrow_limit)
+    VALUES (@reader_id, @name, @email, @phone, @student_id, @reader_type, @expiry_date, @borrow_limit)
   `).run({
     reader_id: readerId,
     name,
@@ -70,6 +79,7 @@ router.post("/", (req, res) => {
     student_id: student_id || null,
     reader_type: reader_type || "本科生",
     expiry_date: expiry_date || null,
+    borrow_limit: borrowLimit,
   });
 
   res.status(201).json({ id: result.lastInsertRowid, reader_id: readerId });

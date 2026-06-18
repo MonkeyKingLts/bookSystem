@@ -11,6 +11,7 @@ import {
   LogOut,
   Library,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '仪表盘' },
@@ -22,6 +23,8 @@ const navItems = [
 ];
 
 export default function Sidebar() {
+  const { user, logout } = useAuth();
+
   return (
     <aside className="w-64 min-h-screen bg-primary text-white flex flex-col shrink-0">
       <div className="p-6 border-b border-white/10">
@@ -31,7 +34,7 @@ export default function Sidebar() {
           </div>
           <div>
             <h1 className="font-bold text-sm leading-tight">Lexis 图书管理系统</h1>
-            <p className="text-xs text-white/50 mt-0.5">中心馆管理员</p>
+            <p className="text-xs text-white/50 mt-0.5">{user?.role || '中心馆管理员'}</p>
           </div>
         </div>
       </div>
@@ -71,7 +74,7 @@ export default function Sidebar() {
           <HelpCircle className="w-4 h-4" />
           技术支持
         </button>
-        <button className="flex items-center gap-3 px-4 py-2 text-sm text-white/50 hover:text-white/80 w-full">
+        <button onClick={logout} className="flex items-center gap-3 px-4 py-2 text-sm text-white/50 hover:text-white/80 w-full">
           <LogOut className="w-4 h-4" />
           退出登录
         </button>

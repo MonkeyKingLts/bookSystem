@@ -42,7 +42,13 @@ router.get("/", (req, res) => {
 
 router.get("/categories", (_req, res) => {
   const categories = db.prepare("SELECT DISTINCT category FROM books ORDER BY category").all();
-  res.json(categories.map((c: { category: string }) => c.category));
+  res.json(categories.map((c) => (c as { category: string }).category));
+});
+
+router.get("/by-isbn/:isbn", (req, res) => {
+  const book = db.prepare("SELECT * FROM books WHERE isbn = ?").get(req.params.isbn);
+  if (!book) return res.status(404).json({ error: "图书不存在" });
+  res.json(book);
 });
 
 router.get("/:id", (req, res) => {

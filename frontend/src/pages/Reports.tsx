@@ -29,17 +29,39 @@ const categoryColors: Record<string, string> = {
 };
 
 export default function Reports() {
+  const [days, setDays] = useState(30);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [trends, setTrends] = useState<{ date: string; borrowed: number; returned: number }[]>([]);
   const [categories, setCategories] = useState<{ name: string; percentage: number }[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [libraryName, setLibraryName] = useState('Lexicon Central Library');
 
-  useEffect(() => {
-    api.reports.overview().then(setOverview);
-    api.reports.trends().then(setTrends);
+  const loadData = () => {
+    api.reports.overview(days).then(setOverview);
+    api.reports.trends(days).then(setTrends);
     api.reports.categories().then(setCategories);
     api.reports.logs().then((res) => setLogs(res.logs));
-  }, []);
+    api.settings.get().then((s) => setLibraryName(s.library_name || 'Lexicon Central Library'));
+  };
+
+  useEffect(() => { loadData(); }, [days]);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const { downloadReportPdf, exportReportClientPdf } = await import('../utils/pdf');
+      try {
+        await downloadReportPdf(days);
+      } catch {
+        if (overview) {
+          exportReportClientPdf({ libraryName, days, overview, trends, categories, logs });
+        }
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const TrendIcon = ({ value }: { value: number }) => {
     if (value > 0) return <span className="text-emerald-600 text-xs flex items-center gap-0.5"><TrendingUp className="w-3 h-3" />+{value}%</span>;
@@ -57,14 +79,14 @@ export default function Reports() {
             <p className="text-secondary text-sm mt-1">查看和分析图书馆运营的关键指标、借阅趋势及馆藏状态</p>
           </div>
           <div className="flex items-center gap-3">
-            <select className="px-3 py-2.5 bg-surface border border-border rounded-xl text-sm">
-              <option>最近 30 天</option>
-              <option>最近 90 天</option>
-              <option>最近一年</option>
+            <select value={days} onChange={(e) => setDays(parseInt(e.target.value))} className="px-3 py-2.5 bg-surface border border-border rounded-xl text-sm">
+              <option value={30}>最近 30 天</option>
+              <option value={90}>最近 90 天</option>
+              <option value={365}>最近一年</option>
             </select>
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium">
+            <button onClick={handleExport} disabled={exporting} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium disabled:opacity-50">
               <Download className="w-4 h-4" />
-              导出报告
+              {exporting ? '导出中...' : '导出报告 (PDF)'}
             </button>
           </div>
         </div>

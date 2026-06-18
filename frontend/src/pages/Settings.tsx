@@ -1,24 +1,36 @@
 import { useEffect, useState } from 'react';
 import { Trash2, Plus, Upload } from 'lucide-react';
 import Header from '../components/Header';
+import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import type { Settings } from '../types';
 
 type Tab = 'general' | 'borrowing' | 'security' | 'notifications';
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [tab, setTab] = useState<Tab>('general');
   const [settings, setSettings] = useState<Settings>({});
+  const [originalSettings, setOriginalSettings] = useState<Settings>({});
   const [auditLogs, setAuditLogs] = useState<{ id: number; event_type: string; ip_address: string; status: string; created_at: string }[]>([]);
   const [ipList, setIpList] = useState<{ id: number; name: string; ip_range: string }[]>([]);
   const [saved, setSaved] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showIpModal, setShowIpModal] = useState(false);
+  const [showAllLogs, setShowAllLogs] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: '', newPass: '', confirm: '' });
+  const [ipForm, setIpForm] = useState({ name: '', ip_range: '' });
+  const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    api.settings.get().then(setSettings);
+  const loadSettings = () => {
+    api.settings.get().then((s) => { setSettings(s); setOriginalSettings(s); });
     api.settings.auditLogs().then(setAuditLogs);
     api.settings.ipWhitelist().then(setIpList);
-  }, []);
+  };
+
+  useEffect(() => { loadSettings(); }, []);
 
   const update = (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -27,8 +39,46 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     await api.settings.update(settings);
+    setOriginalSettings(settings);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleDiscard = () => {
+    setSettings(originalSettings);
+    setMessage('已放弃更改');
+    setTimeout(() => setMessage(''), 2000);
+  };
+
+  const handleBackup = async () => {
+    const result = await api.settings.backup();
+    update('last_backup', result.timestamp);
+    setMessage('备份完成');
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const handleChangePassword = async () => {
+    if (passwordForm.newPass !== passwordForm.confirm) {
+      setMessage('两次输入的新密码不一致');
+      return;
+    }
+    await api.auth.changePassword(passwordForm.current, passwordForm.newPass);
+    setShowPasswordModal(false);
+    setPasswordForm({ current: '', newPass: '', confirm: '' });
+    setMessage('密码修改成功');
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const handleAddIp = async () => {
+    await api.settings.addIp(ipForm.name, ipForm.ip_range);
+    setIpForm({ name: '', ip_range: '' });
+    setShowIpModal(false);
+    api.settings.ipWhitelist().then(setIpList);
+  };
+
+  const handleDeleteIp = async (id: number) => {
+    await api.settings.deleteIp(id);
+    api.settings.ipWhitelist().then(setIpList);
   };
 
   const tabs: { key: Tab; label: string }[] = [
@@ -130,8 +180,8 @@ export default function SettingsPage() {
                   <option value="weekly">每周</option>
                   <option value="monthly">每月</option>
                 </select>
-                <p className="text-xs text-secondary">上次备份: Oct 24, 2023, 03:00 AM CST</p>
-                <button className="text-xs text-tertiary hover:underline mt-1">触发手动备份</button>
+                <p className="text-xs text-secondary">上次备份: {settings.last_backup ? new Date(settings.last_backup).toLocaleString('zh-CN') : '未知'}</p>
+                <button onClick={handleBackup} className="text-xs text-tertiary hover:underline mt-1">触发手动备份</button>
               </div>
             </div>
           </div>
@@ -164,16 +214,18 @@ export default function SettingsPage() {
             <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
               <h3 className="font-semibold text-primary mb-4">管理员资料</h3>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-semibold">EV</div>
+                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-semibold">
+                  {user?.name?.[0] || 'A'}
+                </div>
                 <div>
-                  <p className="font-semibold">{settings.admin_name}</p>
-                  <p className="text-xs text-secondary">{settings.admin_role}</p>
+                  <p className="font-semibold">{user?.name || settings.admin_name}</p>
+                  <p className="text-xs text-secondary">{user?.role || settings.admin_role}</p>
                 </div>
               </div>
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-secondary mb-1">邮箱</label>
-                  <input value={settings.admin_email || ''} readOnly
+                  <input value={user?.email || settings.admin_email || ''} readOnly
                     className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-neutral" />
                 </div>
                 <div>
@@ -181,7 +233,7 @@ export default function SettingsPage() {
                   <div className="flex gap-2">
                     <input type="password" value="••••••••" readOnly
                       className="flex-1 px-3 py-2 border border-border rounded-xl text-sm bg-neutral" />
-                    <button className="px-3 py-2 text-sm text-tertiary border border-border rounded-xl hover:bg-neutral">修改</button>
+                    <button onClick={() => setShowPasswordModal(true)} className="px-3 py-2 text-sm text-tertiary border border-border rounded-xl hover:bg-neutral">修改</button>
                   </div>
                 </div>
               </div>
@@ -190,7 +242,7 @@ export default function SettingsPage() {
             <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-primary">网络访问白名单</h3>
-                <button className="flex items-center gap-1 text-xs text-tertiary hover:underline">
+                <button onClick={() => setShowIpModal(true)} className="flex items-center gap-1 text-xs text-tertiary hover:underline">
                   <Plus className="w-3 h-3" /> 添加 IP 规则
                 </button>
               </div>
@@ -201,7 +253,7 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium">{ip.name}</p>
                       <p className="text-xs text-secondary font-mono">{ip.ip_range}</p>
                     </div>
-                    <button className="p-1.5 hover:bg-white rounded-lg"><Trash2 className="w-4 h-4 text-secondary" /></button>
+                    <button onClick={() => handleDeleteIp(ip.id)} className="p-1.5 hover:bg-white rounded-lg"><Trash2 className="w-4 h-4 text-secondary" /></button>
                   </div>
                 ))}
               </div>
@@ -232,7 +284,9 @@ export default function SettingsPage() {
             <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-primary">安全审计日志</h3>
-                <button className="text-xs text-tertiary hover:underline">查看全部日志 →</button>
+                <button onClick={() => setShowAllLogs(!showAllLogs)} className="text-xs text-tertiary hover:underline">
+                  {showAllLogs ? '收起' : '查看全部日志 →'}
+                </button>
               </div>
               <table className="w-full text-xs">
                 <thead>
@@ -244,7 +298,7 @@ export default function SettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {auditLogs.slice(0, 4).map((log) => (
+                  {(showAllLogs ? auditLogs : auditLogs.slice(0, 4)).map((log) => (
                     <tr key={log.id} className="border-b border-border/50">
                       <td className="py-2 text-secondary">{new Date(log.created_at).toLocaleString('zh-CN')}</td>
                       <td className="py-2">{log.event_type}</td>
@@ -316,14 +370,59 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {message && <p className="text-sm text-tertiary mb-4">{message}</p>}
+
         <div className="flex justify-end gap-3 mt-6">
-          <button className="px-5 py-2.5 text-sm text-secondary border border-border rounded-xl hover:bg-neutral">放弃更改</button>
+          <button onClick={handleDiscard} className="px-5 py-2.5 text-sm text-secondary border border-border rounded-xl hover:bg-neutral">放弃更改</button>
           <button onClick={handleSave}
             className="px-5 py-2.5 text-sm bg-primary text-white rounded-xl font-medium hover:bg-primary-light">
             {saved ? '已保存 ✓' : '保存配置'}
           </button>
         </div>
       </div>
+
+      <Modal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} title="修改密码"
+        footer={<>
+          <button onClick={() => setShowPasswordModal(false)} className="px-4 py-2 text-sm text-secondary">取消</button>
+          <button onClick={handleChangePassword} className="px-5 py-2 bg-primary text-white rounded-xl text-sm">确认修改</button>
+        </>}>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">当前密码</label>
+            <input type="password" value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">新密码</label>
+            <input type="password" value={passwordForm.newPass} onChange={(e) => setPasswordForm({ ...passwordForm, newPass: e.target.value })}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">确认新密码</label>
+            <input type="password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm" />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={showIpModal} onClose={() => setShowIpModal(false)} title="添加 IP 规则"
+        footer={<>
+          <button onClick={() => setShowIpModal(false)} className="px-4 py-2 text-sm text-secondary">取消</button>
+          <button onClick={handleAddIp} className="px-5 py-2 bg-primary text-white rounded-xl text-sm">添加</button>
+        </>}>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">名称</label>
+            <input value={ipForm.name} onChange={(e) => setIpForm({ ...ipForm, name: e.target.value })}
+              placeholder="主校区网络" className="w-full px-3 py-2.5 border border-border rounded-xl text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">IP 范围</label>
+            <input value={ipForm.ip_range} onChange={(e) => setIpForm({ ...ipForm, ip_range: e.target.value })}
+              placeholder="192.168.1.0/24" className="w-full px-3 py-2.5 border border-border rounded-xl text-sm font-mono" />
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

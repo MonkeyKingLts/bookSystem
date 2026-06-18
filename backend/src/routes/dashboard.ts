@@ -17,8 +17,9 @@ router.get("/stats", (_req, res) => {
   });
 });
 
-router.get("/activities", (_req, res) => {
-  const activities = db.prepare("SELECT * FROM activities ORDER BY created_at DESC LIMIT 10").all();
+router.get("/activities", (req, res) => {
+  const limit = parseInt((req.query.limit as string) || "10", 10);
+  const activities = db.prepare("SELECT * FROM activities ORDER BY created_at DESC LIMIT ?").all(limit);
   res.json(activities);
 });
 
@@ -35,11 +36,7 @@ router.get("/trends", (_req, res) => {
     const returned = db.prepare(
       "SELECT COUNT(*) as c FROM borrowings WHERE date(returned_at) = ?"
     ).get(dateStr) as { c: number };
-    trends.push({
-      date: dateStr,
-      borrowed: borrowed.c + Math.floor(Math.random() * 8) + 2,
-      returned: returned.c + Math.floor(Math.random() * 6) + 1,
-    });
+    trends.push({ date: dateStr, borrowed: borrowed.c, returned: returned.c });
   }
   res.json(trends);
 });

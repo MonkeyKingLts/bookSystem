@@ -1,7 +1,13 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import { db } from "../db.js";
+import { syncOverdueStatus, calculateFine } from "../utils/helpers.js";
 
 const router = Router();
+
+router.use((_req, _res, next) => {
+  syncOverdueStatus();
+  next();
+});
 
 function addDays(days: number): string {
   const d = new Date();
@@ -9,15 +15,55 @@ function addDays(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
-router.get("/recent", (_req, res) => {
+function processReturn(borrowingId: number) {
+  const borrowing = db.prepare(`
+    SELECT b.*, bk.title as book_title, bk.id as book_id, r.id as reader_db_id, r.name as reader_name
+    FROM borrowings b
+    JOIN books bk ON bk.id = b.book_id
+    JOIN readers r ON r.id = b.reader_id
+    WHERE b.id = ? AND b.returned_at IS NULL
+  `).get(borrowingId) as {
+    id: number; book_id: number; book_title: string; reader_db_id: number;
+    reader_name: string; due_date: string; status: string;
+  } | undefined;
+
+  if (!borrowing) throw new Error("借阅记录不存在或已归还");
+
+  const fine = borrowing.status === "逾期" ? calculateFine(borrowing.due_date) : 0;
+
+  db.prepare("UPDATE borrowings SET returned_at = datetime('now'), status = '已归还' WHERE id = ?").run(borrowingId);
+  db.prepare("UPDATE books SET available = available + 1 WHERE id = ?").run(borrowing.book_id);
+
+  if (fine > 0) {
+    db.prepare("UPDATE readers SET fines = fines + ? WHERE id = ?").run(fine, borrowing.reader_db_id);
+  }
+
+  const activeOverdue = db.prepare(`
+    SELECT COUNT(*) as c FROM borrowings WHERE reader_id = ? AND status = '逾期' AND returned_at IS NULL
+  `).get(borrowing.reader_db_id) as { c: number };
+
+  if (activeOverdue.c === 0) {
+    db.prepare("UPDATE readers SET status = '信用良好' WHERE id = ? AND status = '有逾期未还'").run(borrowing.reader_db_id);
+  }
+
+  db.prepare(`
+    INSERT INTO activities (type, book_title, reader_name, status)
+    VALUES ('return', ?, ?, '已还')
+  `).run(borrowing.book_title, borrowing.reader_name);
+
+  return { fine, bookTitle: borrowing.book_title };
+}
+
+router.get("/recent", (req, res) => {
+  const limit = parseInt((req.query.limit as string) || "10", 10);
   const transactions = db.prepare(`
     SELECT b.id, b.borrowed_at, b.due_date, b.returned_at, b.status, b.renewed_count,
       r.name as reader_name, bk.title as book_title
     FROM borrowings b
     JOIN readers r ON r.id = b.reader_id
     JOIN books bk ON bk.id = b.book_id
-    ORDER BY b.borrowed_at DESC LIMIT 10
-  `).all();
+    ORDER BY COALESCE(b.returned_at, b.borrowed_at) DESC LIMIT ?
+  `).all(limit);
   res.json(transactions);
 });
 
@@ -56,7 +102,7 @@ router.post("/checkout", (req, res) => {
     const results = [];
     for (const bookId of bookIds) {
       const book = db.prepare("SELECT * FROM books WHERE id = ?").get(bookId) as {
-        id: number; title: string; available: number;
+        id: number; title: string; isbn: string; available: number;
       } | undefined;
       if (!book) throw new Error(`图书 ID ${bookId} 不存在`);
       if (book.available <= 0) throw new Error(`《${book.title}》暂无可借副本`);
@@ -72,20 +118,64 @@ router.post("/checkout", (req, res) => {
         VALUES ('borrow', ?, ?, '已借出')
       `).run(book.title, reader.name);
 
-      results.push({ id: result.lastInsertRowid, bookTitle: book.title });
+      results.push({ id: result.lastInsertRowid, bookTitle: book.title, isbn: book.isbn });
     }
     return results;
   });
 
   try {
-    const results = checkout();
-    res.json({ success: true, dueDate, items: results });
+    const items = checkout();
+    res.json({
+      success: true,
+      dueDate,
+      items,
+      reader: { name: reader.name, readerId },
+      checkoutDate: new Date().toISOString(),
+    });
   } catch (e: unknown) {
     res.status(400).json({ error: (e as Error).message });
   }
 });
 
 router.post("/return", (req, res) => {
+  const { borrowingId } = req.body;
+  if (!borrowingId) return res.status(400).json({ error: "借阅记录 ID 为必填项" });
+  try {
+    const result = processReturn(borrowingId);
+    res.json({ success: true, ...result });
+  } catch (e: unknown) {
+    res.status(404).json({ error: (e as Error).message });
+  }
+});
+
+router.post("/return-by-isbn", (req, res) => {
+  const { isbn, readerId } = req.body as { isbn?: string; readerId?: string };
+  if (!isbn) return res.status(400).json({ error: "ISBN 为必填项" });
+
+  let query = `
+    SELECT b.id FROM borrowings b
+    JOIN books bk ON bk.id = b.book_id
+    WHERE bk.isbn = ? AND b.returned_at IS NULL
+  `;
+  const params: string[] = [isbn];
+  if (readerId) {
+    query += " AND b.reader_id = (SELECT id FROM readers WHERE reader_id = ?)";
+    params.push(readerId);
+  }
+  query += " LIMIT 1";
+
+  const borrowing = db.prepare(query).get(...params) as { id: number } | undefined;
+  if (!borrowing) return res.status(404).json({ error: "未找到该图书的活跃借阅记录" });
+
+  try {
+    const result = processReturn(borrowing.id);
+    res.json({ success: true, ...result });
+  } catch (e: unknown) {
+    res.status(404).json({ error: (e as Error).message });
+  }
+});
+
+router.post("/renew", (req, res) => {
   const { borrowingId } = req.body;
   if (!borrowingId) return res.status(400).json({ error: "借阅记录 ID 为必填项" });
 
@@ -96,46 +186,10 @@ router.post("/return", (req, res) => {
     JOIN readers r ON r.id = b.reader_id
     WHERE b.id = ? AND b.returned_at IS NULL
   `).get(borrowingId) as {
-    id: number; book_id: number; book_title: string; reader_name: string;
-  } | undefined;
-
-  if (!borrowing) return res.status(404).json({ error: "借阅记录不存在或已归还" });
-
-  db.prepare("UPDATE borrowings SET returned_at = datetime('now'), status = '已归还' WHERE id = ?").run(borrowingId);
-  db.prepare("UPDATE books SET available = available + 1 WHERE id = ?").run(borrowing.book_id);
-  db.prepare(`
-    INSERT INTO activities (type, book_title, reader_name, status)
-    VALUES ('return', ?, ?, '已还')
-  `).run(borrowing.book_title, borrowing.reader_name);
-
-  res.json({ success: true });
-});
-
-router.post("/return-by-isbn", (req, res) => {
-  const { isbn } = req.body;
-  if (!isbn) return res.status(400).json({ error: "ISBN 为必填项" });
-
-  const borrowing = db.prepare(`
-    SELECT b.id FROM borrowings b
-    JOIN books bk ON bk.id = b.book_id
-    WHERE bk.isbn = ? AND b.returned_at IS NULL
-    LIMIT 1
-  `).get(isbn) as { id: number } | undefined;
-
-  if (!borrowing) return res.status(404).json({ error: "未找到该图书的活跃借阅记录" });
-
-  req.body.borrowingId = borrowing.id;
-  return router.handle({ ...req, method: "POST", url: "/return" } as never, res);
-});
-
-router.post("/renew", (req, res) => {
-  const { borrowingId } = req.body;
-  if (!borrowingId) return res.status(400).json({ error: "借阅记录 ID 为必填项" });
-
-  const borrowing = db.prepare("SELECT * FROM borrowings WHERE id = ? AND returned_at IS NULL").get(borrowingId) as {
-    id: number; renewed_count: number; book_id: number;
+    id: number; renewed_count: number; book_id: number; book_title: string; reader_name: string; status: string;
   } | undefined;
   if (!borrowing) return res.status(404).json({ error: "借阅记录不存在" });
+  if (borrowing.status === "逾期") return res.status(400).json({ error: "逾期图书不可续借，请先归还" });
 
   const maxRenewals = parseInt(
     (db.prepare("SELECT value FROM settings WHERE key = 'max_renewals'").get() as { value: string })?.value || "2",
@@ -151,8 +205,6 @@ router.post("/renew", (req, res) => {
   );
   const newDueDate = addDays(borrowDays);
 
-  const book = db.prepare("SELECT title FROM books WHERE id = ?").get(borrowing.book_id) as { title: string };
-
   db.prepare(`
     UPDATE borrowings SET due_date = ?, renewed_count = renewed_count + 1, status = '已续借'
     WHERE id = ?
@@ -160,15 +212,16 @@ router.post("/renew", (req, res) => {
 
   db.prepare(`
     INSERT INTO activities (type, book_title, reader_name, status)
-    VALUES ('renew', ?, '系统', '已续借')
-  `).run(book.title);
+    VALUES ('renew', ?, ?, '已续借')
+  `).run(borrowing.book_title, borrowing.reader_name);
 
-  res.json({ success: true, newDueDate });
+  res.json({ success: true, newDueDate, bookTitle: borrowing.book_title });
 });
 
 router.get("/overdue", (_req, res) => {
   const overdue = db.prepare(`
-    SELECT b.*, r.name as reader_name, r.reader_id, bk.title as book_title, bk.isbn
+    SELECT b.id, b.borrowed_at, b.due_date, b.status,
+      r.name as reader_name, r.reader_id, bk.title as book_title, bk.isbn
     FROM borrowings b
     JOIN readers r ON r.id = b.reader_id
     JOIN books bk ON bk.id = b.book_id
@@ -183,10 +236,12 @@ router.get("/reader/:readerId/borrowings", (req, res) => {
   if (!reader) return res.status(404).json({ error: "读者不存在" });
 
   const borrowings = db.prepare(`
-    SELECT b.*, bk.title as book_title, bk.isbn
+    SELECT b.id, b.borrowed_at, b.due_date, b.status, b.renewed_count,
+      bk.title as book_title, bk.isbn, bk.id as book_id
     FROM borrowings b
     JOIN books bk ON bk.id = b.book_id
     WHERE b.reader_id = ? AND b.returned_at IS NULL
+    ORDER BY b.due_date ASC
   `).all(reader.id);
   res.json(borrowings);
 });

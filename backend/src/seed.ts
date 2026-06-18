@@ -1,6 +1,31 @@
 import { db } from "./db.js";
+import bcrypt from "bcryptjs";
+
+function seedUsers() {
+  const userCount = db.prepare("SELECT COUNT(*) as c FROM users").get() as { c: number };
+  if (userCount.c > 0) return;
+  const hash = bcrypt.hashSync("admin123", 10);
+  db.prepare("INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)").run(
+    "admin@lexiconlib.org", hash, "Dr. Eleanor Vance", "超级管理员"
+  );
+}
+
+function seedNotifications() {
+  const count = db.prepare("SELECT COUNT(*) as c FROM notifications").get() as { c: number };
+  if (count.c > 0) return;
+  const items = [
+    { title: "逾期提醒", message: "当前有 1 本图书逾期未还，请及时处理", type: "warning" },
+    { title: "系统更新", message: "图书管理系统已更新至最新版本", type: "info" },
+    { title: "备份完成", message: "数据库自动备份已于今日凌晨完成", type: "success" },
+  ];
+  const insert = db.prepare("INSERT INTO notifications (title, message, type) VALUES (?, ?, ?)");
+  for (const n of items) insert.run(n.title, n.message, n.type);
+}
 
 export function seedDb() {
+  seedUsers();
+  seedNotifications();
+
   const bookCount = db.prepare("SELECT COUNT(*) as c FROM books").get() as { c: number };
   if (bookCount.c > 0) return;
 

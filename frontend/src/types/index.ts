@@ -52,6 +52,27 @@ export interface Borrowing {
   renewed_count?: number;
 }
 
+export interface ActiveBorrowing {
+  id: number;
+  borrowed_at: string;
+  due_date: string;
+  status: string;
+  book_title: string;
+  isbn: string;
+  book_id?: number;
+  reader_name?: string;
+  reader_id?: string;
+  renewed_count?: number;
+}
+
+export interface CheckoutResult {
+  success: boolean;
+  dueDate: string;
+  checkoutDate: string;
+  items: { id: number; bookTitle: string; isbn: string }[];
+  reader: { name: string; readerId: string };
+}
+
 export interface DashboardStats {
   totalCollection: number;
   currentBorrowing: number;
@@ -61,4 +82,20 @@ export interface DashboardStats {
 
 export interface Settings {
   [key: string]: string;
+}
+
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+}
+
+export interface Notification {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  read: number;
+  created_at: string;
 }
