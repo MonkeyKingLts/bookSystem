@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
+import { formatBeijing } from "../utils/datetime.js";
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.post("/backup", (_req, res) => {
   const now = new Date().toISOString();
   db.prepare("INSERT INTO settings (key, value) VALUES ('last_backup', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(now);
   db.prepare("INSERT INTO notifications (title, message, type) VALUES (?, ?, ?)").run(
-    "备份完成", `数据库手动备份已于 ${new Date().toLocaleString("zh-CN")} 完成`, "success"
+    "备份完成", `数据库手动备份已于 ${formatBeijing()} 完成`, "success"
   );
   db.prepare("INSERT INTO audit_logs (event_type, ip_address, status) VALUES ('Manual Backup', '192.168.1.45', '成功')").run();
   res.json({ success: true, timestamp: now });

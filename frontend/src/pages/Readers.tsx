@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import { api } from '../api/client';
+import { formatDate } from '../utils/date';
 import type { Reader } from '../types';
 
 export default function Readers() {
@@ -112,7 +113,7 @@ export default function Readers() {
                       </div>
                       <div>
                         <p className="font-medium">{r.name}</p>
-                        <p className="text-xs text-secondary">加入于 {new Date(r.joined_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short' })}</p>
+                        <p className="text-xs text-secondary">加入于 {formatDate(r.joined_at)}</p>
                       </div>
                     </div>
                   </td>

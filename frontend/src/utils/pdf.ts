@@ -1,10 +1,11 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CheckoutResult } from '../types';
+import { formatDateTime, nowBeijingString } from './date';
 
 export function downloadCheckoutReceipt(result: CheckoutResult, libraryName = 'Lexicon Central Library') {
   const doc = new jsPDF();
-  const date = new Date(result.checkoutDate).toLocaleString('zh-CN');
+  const date = formatDateTime(result.checkoutDate);
 
   doc.setFontSize(18);
   doc.text(libraryName, 105, 20, { align: 'center' });
@@ -57,7 +58,7 @@ export function exportReportClientPdf(data: {
   doc.setFontSize(12);
   doc.text(`运营报表 (最近 ${data.days} 天)`, 105, 30, { align: 'center' });
   doc.setFontSize(10);
-  doc.text(`生成时间: ${new Date().toLocaleString('zh-CN')}`, 20, 42);
+  doc.text(`生成时间: ${nowBeijingString()}`, 20, 42);
 
   doc.text(`借阅总量: ${data.overview.totalBorrowings}`, 20, 54);
   doc.text(`活跃读者: ${data.overview.activeReaders}`, 20, 62);

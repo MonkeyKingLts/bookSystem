@@ -2,6 +2,7 @@ import { Router } from "express";
 import PDFDocument from "pdfkit";
 import { db } from "../db.js";
 import { syncOverdueStatus } from "../utils/helpers.js";
+import { formatBeijing } from "../utils/datetime.js";
 
 const router = Router();
 
@@ -130,7 +131,7 @@ router.get("/export/pdf", (req, res) => {
   doc.fontSize(22).text(libraryName, { align: "center" });
   doc.fontSize(14).text("运营报表", { align: "center" });
   doc.moveDown();
-  doc.fontSize(10).text(`生成时间: ${new Date().toLocaleString("zh-CN")}  |  统计周期: 最近 ${days} 天`);
+  doc.fontSize(10).text(`生成时间: ${formatBeijing()}  |  统计周期: 最近 ${days} 天`);
   doc.moveDown();
 
   doc.fontSize(12).text("关键指标", { underline: true });

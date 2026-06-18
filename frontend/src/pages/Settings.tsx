@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
+import { formatDateTime } from '../utils/date';
 import type { Settings } from '../types';
 
 type Tab = 'general' | 'borrowing' | 'security' | 'notifications';
@@ -180,7 +181,7 @@ export default function SettingsPage() {
                   <option value="weekly">每周</option>
                   <option value="monthly">每月</option>
                 </select>
-                <p className="text-xs text-secondary">上次备份: {settings.last_backup ? new Date(settings.last_backup).toLocaleString('zh-CN') : '未知'}</p>
+                <p className="text-xs text-secondary">上次备份: {settings.last_backup ? formatDateTime(settings.last_backup) : '未知'}</p>
                 <button onClick={handleBackup} className="text-xs text-tertiary hover:underline mt-1">触发手动备份</button>
               </div>
             </div>
@@ -300,7 +301,7 @@ export default function SettingsPage() {
                 <tbody>
                   {(showAllLogs ? auditLogs : auditLogs.slice(0, 4)).map((log) => (
                     <tr key={log.id} className="border-b border-border/50">
-                      <td className="py-2 text-secondary">{new Date(log.created_at).toLocaleString('zh-CN')}</td>
+                      <td className="py-2 text-secondary">{formatDateTime(log.created_at)}</td>
                       <td className="py-2">{log.event_type}</td>
                       <td className="py-2 font-mono">{log.ip_address}</td>
                       <td className="py-2"><StatusBadge status={log.status} /></td>

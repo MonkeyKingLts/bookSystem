@@ -1,6 +1,7 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
 import { db } from "../db.js";
 import { syncOverdueStatus, calculateFine } from "../utils/helpers.js";
+import { nowSqliteUtc } from "../utils/datetime.js";
 
 const router = Router();
 
@@ -31,7 +32,7 @@ function processReturn(borrowingId: number) {
 
   const fine = borrowing.status === "逾期" ? calculateFine(borrowing.due_date) : 0;
 
-  db.prepare("UPDATE borrowings SET returned_at = datetime('now'), status = '已归还' WHERE id = ?").run(borrowingId);
+  db.prepare("UPDATE borrowings SET returned_at = ?, status = '已归还' WHERE id = ?").run(nowSqliteUtc(), borrowingId);
   db.prepare("UPDATE books SET available = available + 1 WHERE id = ?").run(borrowing.book_id);
 
   if (fine > 0) {

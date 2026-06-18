@@ -6,6 +6,7 @@ import Header from '../components/Header';
 import StatCard, { Card } from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 import { api } from '../api/client';
+import { formatDateTime } from '../utils/date';
 import type { DashboardStats, Activity } from '../types';
 
 export default function Dashboard() {
@@ -91,7 +92,7 @@ export default function Dashboard() {
                   <td className="py-3"><StatusBadge status={a.status} /></td>
                   <td className="py-3 font-medium">{a.book_title}</td>
                   <td className="py-3 text-secondary">{a.reader_name}</td>
-                  <td className="py-3 text-secondary">{new Date(a.created_at).toLocaleString('zh-CN')}</td>
+                  <td className="py-3 text-secondary">{formatDateTime(a.created_at)}</td>
                 </tr>
               ))}
             </tbody>

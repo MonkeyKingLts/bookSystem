@@ -9,6 +9,7 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import { Card } from '../components/StatCard';
 import { api } from '../api/client';
 import { downloadCheckoutReceipt } from '../utils/pdf';
+import { formatDateTime } from '../utils/date';
 import type { Reader, Book, Borrowing, ActiveBorrowing, CheckoutResult } from '../types';
 
 type Tab = 'checkout' | 'return' | 'renew' | 'overdue';
@@ -362,7 +363,7 @@ export default function Circulation() {
             <tbody>
               {recent.map((t) => (
                 <tr key={t.id} className="border-b border-border/50">
-                  <td className="py-3 text-secondary">{new Date(t.borrowed_at).toLocaleString('zh-CN')}</td>
+                  <td className="py-3 text-secondary">{formatDateTime(t.borrowed_at)}</td>
                   <td className="py-3">{t.reader_name}</td>
                   <td className="py-3">{t.book_title}</td>
                   <td className="py-3 text-secondary">{t.due_date}</td>
